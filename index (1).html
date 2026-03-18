@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语音识别校对汇总工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 JSZip 库用于打包功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragging {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        audio::-webkit-media-controls-enclosure {
+            background-color: #f1f5f9;
+        }
+        .transcript-input {
+            transition: all 0.2s;
+        }
+        .transcript-input:focus {
+            background-color: #fff;
+            box-shadow: 0 0 0 2px #3b82f6;
+            outline: none;
+        }
+        .btn-disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+        .original-content {
+            background-color: #f8fafc;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8 font-sans text-slate-900">
+    <div class="max-w-[1400px] mx-auto">
+        <!-- Header -->
+        <div class="bg-white rounded-2xl shadow-sm p-6 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-100">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800 mb-2">语音识别结果汇总与校对工具</h1>
+                <p class="text-slate-500 text-sm">
+                    对比 <span class="font-bold text-slate-700">原始内容</span> 并编辑内容，支持一键打包 <span class="font-bold text-blue-600">ZIP (WAV + TXT)</span>。
+                </p>
+            </div>
+            <div class="flex flex-col items-end gap-1">
+                <button id="resetBtn" class="px-4 py-2 text-slate-400 hover:text-red-600 text-sm font-medium transition">
+                    清空数据
+                </button>
+                <div id="projectNameDisplay" class="text-[10px] text-slate-400 font-mono italic"></div>
+            </div>
+        </div>
+
+        <!-- Uploader Section -->
+        <div class="bg-white rounded-2xl shadow-sm p-8 mb-6 drop-zone" id="dropZone">
+            <div class="text-center">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-50 text-blue-600 rounded-full mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                </div>
+                <h2 class="text-lg font-semibold text-slate-700">导入音频与 JSON 文件</h2>
+                <p class="text-slate-500 mb-6">拖拽文件夹或多选文件，系统将自动进行关联匹配</p>
+                
+                <div class="flex flex-wrap justify-center gap-4">
+                    <label class="px-6 py-2.5 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition shadow-md shadow-blue-200">
+                        多选文件
+                        <input type="file" id="fileInput" multiple accept=".wav,.json" class="hidden">
+                    </label>
+                    
+                    <label class="px-6 py-2.5 bg-slate-800 text-white rounded-lg cursor-pointer hover:bg-slate-900 transition shadow-md shadow-slate-200">
+                        选择文件夹
+                        <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status & Results -->
+        <div id="resultSection" class="hidden space-y-6">
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500">
+                    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">音频文件</div>
+                    <div class="text-2xl font-bold text-slate-800" id="wavCount">0</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
+                    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">匹配成功</div>
+                    <div class="text-2xl font-bold text-slate-800" id="matchCount">0</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-amber-500">
+                    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">音频总时长</div>
+                    <div class="text-2xl font-bold text-slate-800" id="totalDuration">00:00</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
+                    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold">异常/缺失</div>
+                    <div class="text-2xl font-bold text-slate-800" id="errorCount">0</div>
+                </div>
+            </div>
+
+            <!-- Actions Bar -->
+            <div class="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm gap-4 border border-slate-100">
+                <div class="flex items-center gap-4">
+                    <div class="flex bg-slate-100 rounded-lg p-1">
+                        <button id="undoBtn" title="返回上一步 (Ctrl+Z)" class="p-2 hover:bg-white hover:shadow-sm rounded-md transition text-slate-600 btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                            </svg>
+                        </button>
+                        <button id="redoBtn" title="返回下一步 (Ctrl+Y)" class="p-2 hover:bg-white hover:shadow-sm rounded-md transition text-slate-600 btn-disabled">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap gap-3 w-full md:w-auto">
+                    <button id="downloadOriginalBtn" class="flex-1 md:flex-none px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-2 text-sm font-medium">
+                        导出原始内容 CSV
+                    </button>
+                    <button id="downloadEditedBtn" class="flex-1 md:flex-none px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-2 text-sm font-medium">
+                        导出已编辑内容 CSV
+                    </button>
+                    <button id="downloadZipBtn" class="flex-1 md:flex-none px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 font-bold shadow-lg shadow-blue-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        打包下载 ZIP (录音系统格式)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-slate-100">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm table-fixed">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                <th class="p-4 font-semibold w-48">播放</th>
+                                <th class="p-4 font-semibold w-24">时长</th>
+                                <th class="p-4 font-semibold w-40 text-xs">文件名</th>
+                                <th class="p-4 font-semibold w-1/4">原始内容 (不可改)</th>
+                                <th class="p-4 font-semibold w-1/4">已编辑的识别内容</th>
+                                <th class="p-4 font-semibold w-24 text-center">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="missingSection" class="hidden">
+                <h3 class="text-red-600 font-semibold mb-2 flex items-center gap-2 text-sm">
+                    缺失 JSON 文件的音频：
+                </h3>
+                <div class="bg-red-50 text-red-700 p-4 rounded-xl text-xs font-mono break-all leading-relaxed border border-red-100" id="missingList"></div>
+            </div>
+        </div>
+
+        <!-- Welcome View -->
+        <div id="welcomeView" class="py-24 text-center bg-white rounded-2xl shadow-sm border border-slate-100">
+            <div class="text-slate-200 mb-4 flex justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+            </div>
+            <p class="text-slate-400 font-medium">请将录音文件夹拖入此处</p>
+            <p class="text-slate-300 text-xs mt-2">支持自动识别时长，校对后可打包导出 ZIP 录音包</p>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl transition-all opacity-0 pointer-events-none flex items-center gap-2 text-sm z-50">
+        <span id="toastMsg">操作成功</span>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const folderInput = document.getElementById('folderInput');
+        const dropZone = document.getElementById('dropZone');
+        const resultSection = document.getElementById('resultSection');
+        const welcomeView = document.getElementById('welcomeView');
+        const resultTableBody = document.getElementById('resultTableBody');
+        const downloadOriginalBtn = document.getElementById('downloadOriginalBtn');
+        const downloadEditedBtn = document.getElementById('downloadEditedBtn');
+        const downloadZipBtn = document.getElementById('downloadZipBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+        const projectNameDisplay = document.getElementById('projectNameDisplay');
+        
+        const wavCountEl = document.getElementById('wavCount');
+        const matchCountEl = document.getElementById('matchCount');
+        const totalDurationEl = document.getElementById('totalDuration');
+        const errorCountEl = document.getElementById('errorCount');
+        const missingSection = document.getElementById('missingSection');
+        const missingListEl = document.getElementById('missingList');
+        const toast = document.getElementById('toast');
+
+        let processedData = [];
+        let undoStack = [];
+        let redoStack = [];
+        let totalSeconds = 0;
+        let baseProjectName = "语音校对结果"; // 默认基础文件名
+
+        function formatTime(seconds) {
+            if (!seconds || seconds <= 0) return "00:00";
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) return `${h}h ${m}m ${s}s`;
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        async function getAudioDuration(file) {
+            return new Promise((resolve) => {
+                const audio = new Audio();
+                const url = URL.createObjectURL(file);
+                audio.src = url;
+                audio.onloadedmetadata = () => {
+                    const d = audio.duration;
+                    URL.revokeObjectURL(url);
+                    resolve(d || 0);
+                };
+                audio.onerror = () => resolve(0);
+            });
+        }
+
+        function saveToHistory() {
+            const snapshot = processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited }));
+            undoStack.push(JSON.stringify(snapshot));
+            redoStack = []; 
+            updateHistoryButtons();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const currentSnapshot = JSON.stringify(processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited })));
+            redoStack.push(currentSnapshot);
+            const lastState = JSON.parse(undoStack.pop());
+            applyState(lastState);
+            showToast("已撤销");
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const currentSnapshot = JSON.stringify(processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited })));
+            undoStack.push(currentSnapshot);
+            const nextState = JSON.parse(redoStack.pop());
+            applyState(nextState);
+            showToast("已重做");
+        }
+
+        function applyState(state) {
+            state.forEach(snapshotItem => {
+                const index = processedData.findIndex(d => d.id === snapshotItem.id);
+                if (index !== -1) {
+                    processedData[index].transcript = snapshotItem.transcript;
+                    processedData[index].isEdited = snapshotItem.isEdited;
+                    const row = document.querySelector(`tr[data-id="${snapshotItem.id}"]`);
+                    if (row) {
+                        const input = row.querySelector('.transcript-input');
+                        const statusCell = row.querySelector('.status-cell');
+                        if (input) input.innerText = snapshotItem.transcript;
+                        if (statusCell) statusCell.innerHTML = getStatusBadge(processedData[index]);
+                    }
+                }
+            });
+            updateHistoryButtons();
+        }
+
+        function updateHistoryButtons() {
+            undoBtn.classList.toggle('btn-disabled', undoStack.length === 0);
+            redoBtn.classList.toggle('btn-disabled', redoStack.length === 0);
+        }
+
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+
+            // 提取项目名称：优先使用文件夹名，否则使用第一个文件的基准名
+            if (files[0].webkitRelativePath) {
+                baseProjectName = files[0].webkitRelativePath.split('/')[0];
+            } else {
+                const firstFileName = files[0].name;
+                baseProjectName = firstFileName.substring(0, firstFileName.lastIndexOf('.')) || "导出结果";
+            }
+            projectNameDisplay.textContent = `当前项目: ${baseProjectName}`;
+
+            const wavFiles = new Map();
+            const jsonFiles = new Map();
+
+            for (const file of files) {
+                const name = file.name;
+                const dotIdx = name.lastIndexOf('.');
+                if (dotIdx === -1) continue;
+                const baseName = name.substring(0, dotIdx);
+                const ext = name.substring(dotIdx).toLowerCase();
+                if (ext === '.wav') wavFiles.set(baseName, file);
+                else if (ext === '.json') jsonFiles.set(baseName, file);
+            }
+
+            processedData.forEach(item => { if (item.audioUrl) URL.revokeObjectURL(item.audioUrl); });
+
+            processedData = [];
+            const missing = [];
+            let matches = 0;
+            totalSeconds = 0;
+
+            for (const [baseName, wavFile] of wavFiles) {
+                const duration = await getAudioDuration(wavFile);
+                totalSeconds += duration;
+
+                const row = {
+                    id: crypto.randomUUID(),
+                    fileName: wavFile.name,
+                    transcript: '', 
+                    originalTranscript: '', 
+                    duration: duration,
+                    status: 'success',
+                    isEdited: false,
+                    audioUrl: URL.createObjectURL(wavFile),
+                    rawWavFile: wavFile 
+                };
+
+                if (jsonFiles.has(baseName)) {
+                    try {
+                        const content = await readFileAsText(jsonFiles.get(baseName));
+                        const json = JSON.parse(content);
+                        const phrases = json.combinedRecognizedPhrases;
+                        row.originalTranscript = (phrases && phrases.length > 0) ? (phrases[0].display || "") : "[空文字]";
+                        row.transcript = row.originalTranscript;
+                        matches++;
+                    } catch (e) {
+                        row.originalTranscript = "[JSON 格式错误]";
+                        row.transcript = row.originalTranscript;
+                        row.status = 'error';
+                    }
+                } else {
+                    row.originalTranscript = "[找不到 JSON]";
+                    row.transcript = row.originalTranscript;
+                    row.status = 'error';
+                    missing.push(wavFile.name);
+                }
+                processedData.push(row);
+            }
+
+            renderResults(wavFiles.size, matches, missing);
+        }
+
+        function renderResults(totalWav, matches, missing) {
+            welcomeView.classList.add('hidden');
+            resultSection.classList.remove('hidden');
+
+            wavCountEl.textContent = totalWav;
+            matchCountEl.textContent = matches;
+            errorCountEl.textContent = missing.length;
+            totalDurationEl.textContent = formatTime(totalSeconds);
+
+            resultTableBody.innerHTML = '';
+            processedData.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-slate-100 hover:bg-slate-50/50 transition align-middle";
+                tr.dataset.id = item.id;
+                tr.innerHTML = `
+                    <td class="p-3">
+                        <audio controls class="h-8 w-full min-w-[160px]"><source src="${item.audioUrl}" type="audio/wav"></audio>
+                    </td>
+                    <td class="p-4 text-slate-500 font-mono text-xs whitespace-nowrap">${formatTime(item.duration)}</td>
+                    <td class="p-4 font-mono text-[10px] text-slate-400 break-all select-all">${item.fileName}</td>
+                    <td class="p-3">
+                        <div class="original-content p-2 rounded border border-slate-100 text-slate-500 break-words min-h-[36px] text-xs">
+                            ${item.originalTranscript}
+                        </div>
+                    </td>
+                    <td class="p-2">
+                        <div 
+                            contenteditable="true" 
+                            class="transcript-input p-2 rounded bg-white border border-slate-200 hover:border-blue-400 text-slate-800 break-words min-h-[36px] shadow-sm transition-colors"
+                            onfocus="captureOldState('${item.id}')"
+                            onblur="commitChanges('${item.id}', this.innerText)"
+                        >${item.transcript}</div>
+                    </td>
+                    <td class="p-4 text-center status-cell">${getStatusBadge(item)}</td>
+                `;
+                resultTableBody.appendChild(tr);
+            });
+
+            missingSection.classList.toggle('hidden', missing.length === 0);
+            missingListEl.textContent = missing.join(' | ');
+            undoStack = [];
+            redoStack = [];
+            updateHistoryButtons();
+        }
+
+        let tempOldTranscript = "";
+        window.captureOldState = function(id) {
+            const item = processedData.find(d => d.id === id);
+            if (item) tempOldTranscript = item.transcript;
+        };
+
+        window.commitChanges = function(id, text) {
+            if (text === tempOldTranscript) return;
+            saveToHistory();
+            const index = processedData.findIndex(d => d.id === id);
+            if (index !== -1) {
+                processedData[index].transcript = text;
+                processedData[index].isEdited = (text !== processedData[index].originalTranscript);
+                const row = document.querySelector(`tr[data-id="${id}"]`);
+                if (row) {
+                    const statusCell = row.querySelector('.status-cell');
+                    statusCell.innerHTML = getStatusBadge(processedData[index]);
+                }
+            }
+            showToast("修改已保存");
+        };
+
+        function getStatusBadge(item) {
+            if (item.isEdited) return '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold">已校对</span>';
+            if (item.status === 'success') return '<span class="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[10px] font-bold">已匹配</span>';
+            return '<span class="px-2 py-1 bg-red-100 text-red-700 rounded-md text-[10px] font-bold text-nowrap">缺失JSON</span>';
+        }
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+
+        function showToast(msg) {
+            document.getElementById('toastMsg').textContent = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => toast.classList.add('opacity-0', 'pointer-events-none'), 1500);
+        }
+
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragging'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragging'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        resetBtn.addEventListener('click', () => { if(confirm("确定清空当前所有导入的数据吗？")) location.reload(); });
+        undoBtn.addEventListener('click', undo);
+        redoBtn.addEventListener('click', redo);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+                if (e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+            }
+        });
+
+        // 修改 CSV 导出文件名
+        function downloadCSV(type) {
+            if (processedData.length === 0) return;
+            let csvContent = ""; 
+            processedData.forEach(row => {
+                const fileName = row.fileName;
+                const contentText = type === 'original' ? row.originalTranscript : row.transcript;
+                const cleanContent = contentText.replace(/"/g, '""').replace(/\n/g, ' ');
+                csvContent += `${fileName},"${cleanContent}"\n`;
+            });
+            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            
+            // 命名逻辑：[项目名](后缀).csv
+            const suffix = type === 'original' ? '(原始内容)' : '(已编辑内容)';
+            link.download = `${baseProjectName}${suffix}.csv`;
+            
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 修改 ZIP 打包下载文件名
+        async function downloadZip() {
+            if (processedData.length === 0) return;
+            
+            showToast("正在准备压缩包...");
+            const zip = new JSZip();
+            let txtContent = ""; 
+
+            processedData.forEach(row => {
+                if (row.rawWavFile) {
+                    zip.file(row.fileName, row.rawWavFile);
+                }
+                const cleanText = row.transcript.replace(/\n/g, ' ');
+                // 这里使用单次 Tab 间隔 (\t)，提取自已编辑的内容列
+                txtContent += `${row.fileName}\t${cleanText}\n`;
+            });
+
+            zip.file("transcripts.txt", txtContent);
+
+            try {
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(content);
+                const link = document.createElement("a");
+                link.href = url;
+                
+                // 命名逻辑：[项目名](已编辑内容).zip
+                link.download = `${baseProjectName}(已编辑内容).zip`;
+                
+                link.click();
+                URL.revokeObjectURL(url);
+                showToast("ZIP 打包完成");
+            } catch (err) {
+                console.error(err);
+                showToast("打包失败");
+            }
+        }
+
+        downloadOriginalBtn.addEventListener('click', () => downloadCSV('original'));
+        downloadEditedBtn.addEventListener('click', () => downloadCSV('edited'));
+        downloadZipBtn.addEventListener('click', downloadZip);
+    </script>
+</body>
+</html>
