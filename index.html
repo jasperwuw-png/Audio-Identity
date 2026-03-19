@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>语音识别校对汇总工具</title>
+    <title>语音识别校对汇总工具 - 语言标注版</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 JSZip 库用于打包功能 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         .drop-zone {
@@ -37,16 +36,24 @@
             color: #64748b;
             cursor: not-allowed;
         }
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen p-4 md:p-8 font-sans text-slate-900">
-    <div class="max-w-[1400px] mx-auto">
+    <div class="max-w-[1500px] mx-auto">
         <!-- Header -->
         <div class="bg-white rounded-2xl shadow-sm p-6 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-100">
             <div>
                 <h1 class="text-2xl font-bold text-slate-800 mb-2">语音识别结果汇总与校对工具</h1>
                 <p class="text-slate-500 text-sm">
-                    对比 <span class="font-bold text-slate-700">原始内容</span> 并编辑内容，支持一键打包 <span class="font-bold text-blue-600">ZIP (WAV + TXT)</span>。
+                    对比 <span class="font-bold text-slate-700">原始内容</span> 并编辑内容，支持按 <span class="font-bold text-indigo-600">语言标签</span> 分包导出。
                 </p>
             </div>
             <div class="flex flex-col items-end gap-1">
@@ -66,7 +73,18 @@
                     </svg>
                 </div>
                 <h2 class="text-lg font-semibold text-slate-700">导入音频与 JSON 文件</h2>
-                <p class="text-slate-500 mb-6">拖拽文件夹或多选文件，系统将自动进行关联匹配</p>
+                
+                <!-- New Language Selector for Init -->
+                <div class="max-w-xs mx-auto my-4">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">设定初始语言</label>
+                    <select id="batchLangSelector" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="zh_CN">普通话 (zh_CN)</option>
+                        <option value="en_US">英语 (en_US)</option>
+                        <option value="zh_HK">粤语 (zh_HK)</option>
+                    </select>
+                </div>
+
+                <p class="text-slate-500 mb-6 text-sm">拖拽文件夹或多选文件，系统将自动进行关联匹配</p>
                 
                 <div class="flex flex-wrap justify-center gap-4">
                     <label class="px-6 py-2.5 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition shadow-md shadow-blue-200">
@@ -128,11 +146,11 @@
                     <button id="downloadEditedBtn" class="flex-1 md:flex-none px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-2 text-sm font-medium">
                         导出已编辑内容 CSV
                     </button>
-                    <button id="downloadZipBtn" class="flex-1 md:flex-none px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 font-bold shadow-lg shadow-blue-100">
+                    <button id="downloadZipBtn" class="flex-1 md:flex-none px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center justify-center gap-2 font-bold shadow-lg shadow-indigo-100">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
-                        打包下载 ZIP (录音系统格式)
+                        分语言打包下载 ZIP
                     </button>
                 </div>
             </div>
@@ -145,8 +163,9 @@
                             <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
                                 <th class="p-4 font-semibold w-48">播放</th>
                                 <th class="p-4 font-semibold w-24">时长</th>
+                                <th class="p-4 font-semibold w-32">语言标注</th>
                                 <th class="p-4 font-semibold w-40 text-xs">文件名</th>
-                                <th class="p-4 font-semibold w-1/4">原始内容 (不可改)</th>
+                                <th class="p-4 font-semibold w-1/4">原始内容</th>
                                 <th class="p-4 font-semibold w-1/4">已编辑的识别内容</th>
                                 <th class="p-4 font-semibold w-24 text-center">状态</th>
                             </tr>
@@ -172,7 +191,7 @@
                 </svg>
             </div>
             <p class="text-slate-400 font-medium">请将录音文件夹拖入此处</p>
-            <p class="text-slate-300 text-xs mt-2">支持自动识别时长，校对后可打包导出 ZIP 录音包</p>
+            <p class="text-slate-300 text-xs mt-2">支持自动识别时长，校对后可按语言分包导出</p>
         </div>
     </div>
 
@@ -185,6 +204,7 @@
         const fileInput = document.getElementById('fileInput');
         const folderInput = document.getElementById('folderInput');
         const dropZone = document.getElementById('dropZone');
+        const batchLangSelector = document.getElementById('batchLangSelector');
         const resultSection = document.getElementById('resultSection');
         const welcomeView = document.getElementById('welcomeView');
         const resultTableBody = document.getElementById('resultTableBody');
@@ -208,7 +228,13 @@
         let undoStack = [];
         let redoStack = [];
         let totalSeconds = 0;
-        let baseProjectName = "语音校对结果"; // 默认基础文件名
+        let baseProjectName = "语音校对结果";
+
+        const LANG_OPTIONS = [
+            { value: 'zh_CN', label: 'zh_CN' },
+            { value: 'en_US', label: 'en_US' },
+            { value: 'zh_HK', label: 'zh_HK' }
+        ];
 
         function formatTime(seconds) {
             if (!seconds || seconds <= 0) return "00:00";
@@ -234,7 +260,12 @@
         }
 
         function saveToHistory() {
-            const snapshot = processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited }));
+            const snapshot = processedData.map(item => ({ 
+                id: item.id, 
+                transcript: item.transcript, 
+                isEdited: item.isEdited,
+                lang: item.lang 
+            }));
             undoStack.push(JSON.stringify(snapshot));
             redoStack = []; 
             updateHistoryButtons();
@@ -242,7 +273,12 @@
 
         function undo() {
             if (undoStack.length === 0) return;
-            const currentSnapshot = JSON.stringify(processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited })));
+            const currentSnapshot = JSON.stringify(processedData.map(item => ({ 
+                id: item.id, 
+                transcript: item.transcript, 
+                isEdited: item.isEdited,
+                lang: item.lang 
+            })));
             redoStack.push(currentSnapshot);
             const lastState = JSON.parse(undoStack.pop());
             applyState(lastState);
@@ -251,7 +287,12 @@
 
         function redo() {
             if (redoStack.length === 0) return;
-            const currentSnapshot = JSON.stringify(processedData.map(item => ({ id: item.id, transcript: item.transcript, isEdited: item.isEdited })));
+            const currentSnapshot = JSON.stringify(processedData.map(item => ({ 
+                id: item.id, 
+                transcript: item.transcript, 
+                isEdited: item.isEdited,
+                lang: item.lang 
+            })));
             undoStack.push(currentSnapshot);
             const nextState = JSON.parse(redoStack.pop());
             applyState(nextState);
@@ -264,12 +305,16 @@
                 if (index !== -1) {
                     processedData[index].transcript = snapshotItem.transcript;
                     processedData[index].isEdited = snapshotItem.isEdited;
+                    processedData[index].lang = snapshotItem.lang;
+                    
                     const row = document.querySelector(`tr[data-id="${snapshotItem.id}"]`);
                     if (row) {
                         const input = row.querySelector('.transcript-input');
                         const statusCell = row.querySelector('.status-cell');
+                        const langSelect = row.querySelector('.lang-select');
                         if (input) input.innerText = snapshotItem.transcript;
                         if (statusCell) statusCell.innerHTML = getStatusBadge(processedData[index]);
+                        if (langSelect) langSelect.value = snapshotItem.lang;
                     }
                 }
             });
@@ -284,14 +329,15 @@
         async function handleFiles(files) {
             if (files.length === 0) return;
 
-            // 提取项目名称：优先使用文件夹名，否则使用第一个文件的基准名
+            const selectedDefaultLang = batchLangSelector.value;
+
             if (files[0].webkitRelativePath) {
                 baseProjectName = files[0].webkitRelativePath.split('/')[0];
             } else {
                 const firstFileName = files[0].name;
                 baseProjectName = firstFileName.substring(0, firstFileName.lastIndexOf('.')) || "导出结果";
             }
-            projectNameDisplay.textContent = `当前项目: ${baseProjectName}`;
+            projectNameDisplay.textContent = `当前项目: ${baseProjectName} | 默认语言: ${selectedDefaultLang}`;
 
             const wavFiles = new Map();
             const jsonFiles = new Map();
@@ -323,6 +369,7 @@
                     transcript: '', 
                     originalTranscript: '', 
                     duration: duration,
+                    lang: selectedDefaultLang, // Use the selected language from batch picker
                     status: 'success',
                     isEdited: false,
                     audioUrl: URL.createObjectURL(wavFile),
@@ -368,11 +415,25 @@
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-slate-100 hover:bg-slate-50/50 transition align-middle";
                 tr.dataset.id = item.id;
+                
+                // Build language dropdown
+                const langOptionsHtml = LANG_OPTIONS.map(opt => 
+                    `<option value="${opt.value}" ${item.lang === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                ).join('');
+
                 tr.innerHTML = `
                     <td class="p-3">
                         <audio controls class="h-8 w-full min-w-[160px]"><source src="${item.audioUrl}" type="audio/wav"></audio>
                     </td>
                     <td class="p-4 text-slate-500 font-mono text-xs whitespace-nowrap">${formatTime(item.duration)}</td>
+                    <td class="p-4">
+                        <select 
+                            class="lang-select w-full p-1.5 text-xs bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-blue-400 outline-none"
+                            onchange="updateLang('${item.id}', this.value)"
+                        >
+                            ${langOptionsHtml}
+                        </select>
+                    </td>
                     <td class="p-4 font-mono text-[10px] text-slate-400 break-all select-all">${item.fileName}</td>
                     <td class="p-3">
                         <div class="original-content p-2 rounded border border-slate-100 text-slate-500 break-words min-h-[36px] text-xs">
@@ -398,6 +459,15 @@
             redoStack = [];
             updateHistoryButtons();
         }
+
+        window.updateLang = function(id, newLang) {
+            saveToHistory();
+            const index = processedData.findIndex(d => d.id === id);
+            if (index !== -1) {
+                processedData[index].lang = newLang;
+            }
+            showToast(`已更改语言为 ${newLang}`);
+        };
 
         let tempOldTranscript = "";
         window.captureOldState = function(id) {
@@ -442,6 +512,72 @@
             setTimeout(() => toast.classList.add('opacity-0', 'pointer-events-none'), 1500);
         }
 
+        // Export logic
+        function downloadCSV(type) {
+            if (processedData.length === 0) return;
+            let csvContent = "文件名,语言,内容\n"; 
+            processedData.forEach(row => {
+                const fileName = row.fileName;
+                const lang = row.lang;
+                const contentText = type === 'original' ? row.originalTranscript : row.transcript;
+                const cleanContent = contentText.replace(/"/g, '""').replace(/\n/g, ' ');
+                csvContent += `${fileName},${lang},"${cleanContent}"\n`;
+            });
+            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            const suffix = type === 'original' ? '(原始内容)' : '(已编辑内容)';
+            link.download = `${baseProjectName}${suffix}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function downloadZip() {
+            if (processedData.length === 0) return;
+            
+            const languagesFound = [...new Set(processedData.map(d => d.lang))];
+            showToast(`正在准备 ${languagesFound.length} 个语言分包...`);
+
+            // Helper to generate a zip for a specific language
+            const generateZipForLang = async (lang) => {
+                const zip = new JSZip();
+                const items = processedData.filter(d => d.lang === lang);
+                let txtContent = "";
+
+                items.forEach(row => {
+                    if (row.rawWavFile) {
+                        zip.file(row.fileName, row.rawWavFile);
+                    }
+                    const cleanText = row.transcript.replace(/\n/g, ' ');
+                    txtContent += `${row.fileName}\t${cleanText}\n`;
+                });
+
+                zip.file("transcripts.txt", txtContent);
+                const content = await zip.generateAsync({ type: "blob" });
+                return content;
+            };
+
+            // Process each language separately
+            for (const lang of languagesFound) {
+                try {
+                    const blob = await generateZipForLang(lang);
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `${baseProjectName}_${lang}(训练包).zip`;
+                    link.click();
+                    
+                    // Small delay to allow browser to trigger multiple downloads
+                    await new Promise(r => setTimeout(r, 500));
+                    URL.revokeObjectURL(url);
+                } catch (err) {
+                    console.error(`Failed to pack ${lang}:`, err);
+                }
+            }
+            showToast("所有语言分包已导出");
+        }
+
         dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragging'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
         dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragging'); handleFiles(e.dataTransfer.files); });
@@ -457,66 +593,6 @@
                 if (e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
             }
         });
-
-        // 修改 CSV 导出文件名
-        function downloadCSV(type) {
-            if (processedData.length === 0) return;
-            let csvContent = ""; 
-            processedData.forEach(row => {
-                const fileName = row.fileName;
-                const contentText = type === 'original' ? row.originalTranscript : row.transcript;
-                const cleanContent = contentText.replace(/"/g, '""').replace(/\n/g, ' ');
-                csvContent += `${fileName},"${cleanContent}"\n`;
-            });
-            const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            
-            // 命名逻辑：[项目名](后缀).csv
-            const suffix = type === 'original' ? '(原始内容)' : '(已编辑内容)';
-            link.download = `${baseProjectName}${suffix}.csv`;
-            
-            link.click();
-            URL.revokeObjectURL(url);
-        }
-
-        // 修改 ZIP 打包下载文件名
-        async function downloadZip() {
-            if (processedData.length === 0) return;
-            
-            showToast("正在准备压缩包...");
-            const zip = new JSZip();
-            let txtContent = ""; 
-
-            processedData.forEach(row => {
-                if (row.rawWavFile) {
-                    zip.file(row.fileName, row.rawWavFile);
-                }
-                const cleanText = row.transcript.replace(/\n/g, ' ');
-                // 这里使用单次 Tab 间隔 (\t)，提取自已编辑的内容列
-                txtContent += `${row.fileName}\t${cleanText}\n`;
-            });
-
-            zip.file("transcripts.txt", txtContent);
-
-            try {
-                const content = await zip.generateAsync({ type: "blob" });
-                const url = URL.createObjectURL(content);
-                const link = document.createElement("a");
-                link.href = url;
-                
-                // 命名逻辑：[项目名](已编辑内容).zip
-                link.download = `${baseProjectName}(已编辑内容).zip`;
-                
-                link.click();
-                URL.revokeObjectURL(url);
-                showToast("ZIP 打包完成");
-            } catch (err) {
-                console.error(err);
-                showToast("打包失败");
-            }
-        }
 
         downloadOriginalBtn.addEventListener('click', () => downloadCSV('original'));
         downloadEditedBtn.addEventListener('click', () => downloadCSV('edited'));
